@@ -1,6 +1,9 @@
 package timer
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 const (
 	stateIdle = iota
@@ -12,13 +15,14 @@ const (
 // the current time will be sent on C, unless the Timer was created by AfterFunc.
 // A Timer must be created with NewTimer or AfterFunc.
 type Timer struct {
-	C         <-chan time.Time
-	c         chan time.Time
-	duration  time.Duration
+	t  *time.Timer
+	C  <-chan time.Time
+	fn func()
+
+	l         *sync.Mutex // to synchronize access to the fields below
 	state     int
-	fn        func()
+	duration  time.Duration
 	startedAt time.Time
-	t         *time.Timer
 }
 
 // AfterFunc waits after calling its Start method for the duration
@@ -26,8 +30,10 @@ type Timer struct {
 // It returns a Timer that can be used to cancel the call using its Stop method,
 // or pause using its Pause method
 func AfterFunc(d time.Duration, f func()) *Timer {
-	t := new(Timer)
-	t.duration = d
+	t := &Timer{
+		duration: d,
+		l:        new(sync.Mutex),
+	}
 	t.fn = func() {
 		t.state = stateExpired
 		f()
@@ -40,13 +46,14 @@ func AfterFunc(d time.Duration, f func()) *Timer {
 // or pause using its Pause method
 func NewTimer(d time.Duration) *Timer {
 	c := make(chan time.Time, 1)
-	t := new(Timer)
-	t.C = c
-	t.c = c
-	t.duration = d
+	t := &Timer{
+		C:        c,
+		duration: d,
+		l:        new(sync.Mutex),
+	}
 	t.fn = func() {
 		t.state = stateExpired
-		t.c <- time.Now()
+		c <- time.Now()
 	}
 	return t
 }
@@ -54,6 +61,8 @@ func NewTimer(d time.Duration) *Timer {
 // Pause pauses current timer until Start method will be called.
 // Next Start call will wait rest of duration.
 func (t *Timer) Pause() bool {
+	t.l.Lock()
+	defer t.l.Unlock()
 	if t.state != stateActive {
 		return false
 	}
@@ -68,6 +77,8 @@ func (t *Timer) Pause() bool {
 
 // Start starts Timer that will send the current time on its channel after at least duration d.
 func (t *Timer) Start() bool {
+	t.l.Lock()
+	defer t.l.Unlock()
 	if t.state != stateIdle {
 		return false
 	}
@@ -81,6 +92,8 @@ func (t *Timer) Start() bool {
 // false if the timer has already expired or been stopped.
 // Stop does not close the channel, to prevent a read from the channel succeeding incorrectly.
 func (t *Timer) Stop() bool {
+	t.l.Lock()
+	defer t.l.Unlock()
 	if t.state != stateActive {
 		return false
 	}
@@ -91,7 +104,15 @@ func (t *Timer) Stop() bool {
 }
 
 // TimeLeft returns the duration left to run before the timer expires.
+// TimeLeft is safe to be called on a nil timer and will return 0 in that case.
 func (t *Timer) TimeLeft() time.Duration {
+	if t == nil {
+		return 0
+	}
+
+	t.l.Lock()
+	defer t.l.Unlock()
+
 	switch t.state {
 	case stateIdle:
 		return t.duration
