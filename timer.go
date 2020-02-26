@@ -62,8 +62,7 @@ func (t *Timer) Pause() bool {
 		return false
 	}
 	t.state = stateIdle
-	dur := time.Now().Sub(t.startedAt)
-	t.duration = t.duration - dur
+	t.duration -= time.Now().Sub(t.startedAt)
 	return true
 }
 
@@ -89,4 +88,18 @@ func (t *Timer) Stop() bool {
 	t.state = stateExpired
 	t.t.Stop()
 	return true
+}
+
+// TimeLeft returns the duration left to run before the timer expires.
+func (t *Timer) TimeLeft() time.Duration {
+	switch t.state {
+	case stateIdle:
+		return t.duration
+	case stateActive:
+		return time.Now().Sub(t.startedAt)
+	case stateExpired:
+		return 0
+	default:
+		panic("unhandled timer state")
+	}
 }
