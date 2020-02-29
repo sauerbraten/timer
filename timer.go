@@ -125,7 +125,7 @@ func (t *Timer) TimeLeft() time.Duration {
 	case stateIdle:
 		return t.duration
 	case stateActive:
-		return time.Now().Sub(t.startedAt)
+		return t.duration - time.Now().Sub(t.startedAt)
 	case stateExpired:
 		return 0
 	default:
