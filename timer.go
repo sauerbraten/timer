@@ -80,6 +80,7 @@ func (t *Timer) Pause() bool {
 		return false
 	}
 	if !t.t.Stop() {
+		<-t.t.C // drain channel
 		t.state = stateExpired
 		return false
 	}
@@ -107,7 +108,10 @@ func (t *Timer) Stop() bool {
 	}
 	t.startedAt = time.Now()
 	t.state = stateExpired
-	t.t.Stop()
+	if !t.t.Stop() {
+		<-t.t.C // drain channel
+		return false
+	}
 	return true
 }
 
